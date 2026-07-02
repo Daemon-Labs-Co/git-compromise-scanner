@@ -1,0 +1,40 @@
+# Binaries and build output
+/git-compromise-scanner
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test and profiling artifacts
+*.test
+*.out
+coverage.*
+*.prof
+
+# Go workspace files (per-developer, not shared)
+go.work
+go.work.sum
+
+# Vendored dependencies (uncomment if you choose not to commit vendor/)
+# vendor/
+
+# Editor and OS noise
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Local scan artifacts — reports and allowlists produced by running the
+# scanner against a target repo often contain investigation-specific data
+# and should not be committed by default.
+report.json
+allowlist.txt
+
+# Local environment
+.env
+.env.*

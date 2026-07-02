@@ -1,0 +1,39 @@
+# git-compromise-scanner example pattern set
+#
+# Format (tab-delimited):  SEVERITY<TAB>NAME<TAB>REGEX<TAB>DESCRIPTION
+# Regexes use Go regexp syntax. Lines starting with # and blank lines are ignored.
+#
+# These are GENERIC examples of the kinds of indicators worth hunting for in
+# git history. For a real investigation, replace or extend them with the
+# concrete IOCs from your incident (exact domains, file hashes, malware
+# strings, attacker email addresses, etc).
+
+# --- Remote code execution / dropper behaviour ---
+CRITICAL	curl-pipe-shell	curl[^\n|]{0,200}\|\s*(bash|sh|zsh)	Remote script downloaded and piped straight into a shell
+CRITICAL	wget-pipe-shell	wget[^\n|]{0,200}\|\s*(bash|sh|zsh)	Remote script downloaded and piped straight into a shell
+HIGH	powershell-encoded	powershell(\.exe)?[^\n]{0,100}-e(nc(odedcommand)?)?\s+[A-Za-z0-9+/=]{40,}	PowerShell invoked with a base64-encoded command
+
+# --- Obfuscated / staged JavaScript payloads ---
+HIGH	eval-base64	eval\s*\(\s*(atob|Buffer\.from)\s*\(	eval() of base64-decoded data, a common obfuscation/staging trick
+HIGH	function-constructor-decode	new\s+Function\s*\(\s*(atob|Buffer\.from)\s*\(	Function constructor fed decoded data (eval equivalent)
+MEDIUM	large-base64-blob	[A-Za-z0-9+/]{400,}={0,2}	Unusually large base64 blob embedded in source
+MEDIUM	hex-escape-wall	(\\x[0-9a-fA-F]{2}){40,}	Long run of hex-escaped bytes, typical of packed payloads
+
+# --- Exfiltration channels ---
+HIGH	discord-webhook	https://discord(app)?\.com/api/webhooks/[0-9]{10,}/	Discord webhook URL, frequently abused for data exfiltration
+HIGH	telegram-bot-api	https://api\.telegram\.org/bot[0-9]{8,}:	Telegram bot API URL with token, frequently abused for exfiltration
+MEDIUM	pastebin-raw	https://pastebin\.com/raw/	Raw pastebin fetch, common payload staging location
+
+# --- Leaked or planted credentials ---
+HIGH	private-key-block	-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----	Private key material committed to history
+HIGH	aws-access-key-id	\bAKIA[0-9A-Z]{16}\b	AWS access key ID
+HIGH	github-token	\bgh[pousr]_[A-Za-z0-9]{36,}\b	GitHub personal access / app token
+MEDIUM	generic-password-assign	(?i)(password|passwd|secret|api[_-]?key)\s*[:=]\s*['"][^'"\s]{8,}['"]	Hardcoded secret-looking assignment
+
+# --- Malicious package installation vectors ---
+HIGH	postinstall-download	"(pre|post)?install"\s*:\s*"[^"]*(curl|wget|node\s+-e|iwr|Invoke-WebRequest)	npm lifecycle script that downloads or evals at install time
+MEDIUM	npx-remote-package	npx\s+--yes\s+	Unprompted npx execution of a package (runs arbitrary code)
+
+# --- Crypto-theft tooling (clipper / drainer indicators) ---
+MEDIUM	eth-wallet-regex-src	0x\[a-fA-F0-9\]\{40\}	Source code containing an Ethereum-address regex (clipper malware matches victim addresses this way)
+MEDIUM	window-ethereum-hook	window\.ethereum[^\n]{0,80}(request|send)	Code hooking the injected web3 provider
