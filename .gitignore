@@ -38,3 +38,4 @@ allowlist.txt
 # Local environment
 .env
 .env.*
+tags
