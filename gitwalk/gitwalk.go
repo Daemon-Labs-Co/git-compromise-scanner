@@ -143,13 +143,20 @@ func (r *Repo) Meta(hash string) (Commit, error) {
 // version of every file" requirement done efficiently: identical content
 // is scanned once, no matter how many commits reference it.
 //
-// Implementation: `git rev-list --all --objects` lists every object
-// reachable from any ref, annotating blobs with their path. We then
-// resolve each object's type and size via a single batched cat-file call,
-// keep only blobs, and aggregate the commit+path references per SHA.
+// Implementation: `git log --all --root --raw` walks every commit's diff
+// against its parent (the root commit is diffed against the empty tree),
+// which yields every (path, blob SHA) pair ever introduced. This is
+// deliberately not `git rev-list --all --objects`: that command dedups
+// blob objects during tree traversal and reports only the first path it
+// encounters for a given content SHA, silently dropping other paths that
+// happen to reference identical content (e.g. two files with the same
+// contents). Walking diffs instead captures every path a blob was ever
+// added or modified under, which is what attribution needs. We then
+// resolve each blob's size via a single batched cat-file call.
 func (r *Repo) UniqueBlobs() (map[string]*Blob, error) {
-	// Step 1: list all (sha, path) pairs. Commits/trees have no path.
-	out, err := r.output("rev-list", "--all", "--objects")
+	// Step 1: list every (sha, path) pair ever introduced by a commit.
+	out, err := r.output("log", "--all", "--root", "--raw", "--no-renames",
+		"--full-index", "--abbrev=40", "--format=", "--diff-filter=ACMR")
 	if err != nil {
 		return nil, err
 	}
@@ -159,17 +166,20 @@ func (r *Repo) UniqueBlobs() (map[string]*Blob, error) {
 		path string
 	}
 	var objs []objLine
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, ":") {
 			continue
 		}
-		sha := line
-		path := ""
-		if i := strings.IndexByte(line, ' '); i >= 0 {
-			sha = line[:i]
-			path = line[i+1:]
+		// Format: ":<oldmode> <newmode> <oldsha> <newsha> <status>\t<path>"
+		tab := strings.IndexByte(line, '\t')
+		if tab < 0 {
+			continue
 		}
-		objs = append(objs, objLine{sha: sha, path: path})
+		fields := strings.Fields(line[:tab])
+		if len(fields) < 4 {
+			continue
+		}
+		objs = append(objs, objLine{sha: fields[3], path: line[tab+1:]})
 	}
 
 	// Step 2: batch-check object types and sizes so we keep only blobs.
@@ -186,8 +196,10 @@ func (r *Repo) UniqueBlobs() (map[string]*Blob, error) {
 		return nil, err
 	}
 
-	// Step 3: aggregate references per unique blob SHA.
+	// Step 3: aggregate references per unique blob SHA, deduping
+	// (sha, path) pairs seen across multiple commits.
 	blobs := map[string]*Blob{}
+	seenRef := map[string]bool{}
 	for _, o := range objs {
 		ts, ok := typeSize[o.sha]
 		if !ok || ts.typ != "blob" {
@@ -198,16 +210,15 @@ func (r *Repo) UniqueBlobs() (map[string]*Blob, error) {
 			b = &Blob{SHA: o.sha, Size: ts.size}
 			blobs[o.sha] = b
 		}
-		if o.path != "" {
+		key := o.sha + "\x00" + o.path
+		if !seenRef[key] {
+			seenRef[key] = true
 			b.Refs = append(b.Refs, BlobRef{Path: o.path})
 		}
 	}
 
-	// Step 4: attach the commit that introduced each path reference.
-	// rev-list --objects gives path but not which commit; we resolve
-	// commit attribution lazily in the caller when a hit is found,
-	// using CommitsForPath. Here we leave Refs[].Commit empty and fill
-	// the path so scanning can proceed; attribution is on-demand.
+	// Step 4: commit attribution is resolved lazily in the caller when a
+	// hit is found, via CommitsForPath. Refs[].Commit is left empty here.
 	return blobs, nil
 }
 

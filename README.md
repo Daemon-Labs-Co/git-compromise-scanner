@@ -38,6 +38,7 @@ go test ./...
 | [docs/architecture.md](docs/architecture.md) | Full reference for every package, struct, and function, plus how a scan fits together |
 | [docs/patterns.md](docs/patterns.md)         | IOC pattern file format and the bundled example set |
 | [docs/testing.md](docs/testing.md)           | What each test file covers and how the git-fixture tests work |
+| [docs/usage.md](docs/usage.md)               | How to run a scan, read the report, and excise confirmed-bad history |
 
 ## Naming note
 
